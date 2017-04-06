@@ -1,0 +1,7 @@
+%train_fn = input('请输入分类文件名' , 's');
+train_fn = 'Chinese/image1-1.mat';
+N = 5;
+test_fn_set = cell(1,N);
+% 1：的 3：国 
+test_fn_set{1:5} ={ 'Chinese/image1-2.mat' , 'Chinese/image1-3.mat' , 'Chinese/image3-1.mat' , 
+    'Chinese/image1-2.mat' , 'Chinese/image1-2.mat'};

@@ -1,0 +1,115 @@
+% Calculate one-shot classification error rate
+function run_classification(train_fn , test_fn_set)
+
+    classdir = 'refit_result';
+    N = length(test_fn_set);
+
+    fprintf(1,'one-shot classification results\n');
+%     for r=1:N
+%         Y = cell_Y{r}; %TODO
+%         fscore = @(train_fn,test_fn) fclassify(train_fn,test_fn,classdir);
+%         perror(r) = myclassify(trainset,testset,fscore,Y,'score');
+%         fprintf(1,' run %d (error %s%%)\n',r,num2str(perror(r),3));
+%     end
+    for i=1:N
+        fscore = fclassify(train_fn , test_fn_set{i} , classdir);
+        fprintf(1,'%s ---> %s : %f' , extract_image_index(train_fn) , extract_image_index(test_fn_set{i}) , fscore);
+    end
+
+end
+
+%
+% Bayesian classification score
+%
+%  log P(I_T|I_C) + log(I_C|I_T) - log(I_C)
+%   for training image I_C
+%   and test image I_T
+%
+% Input
+%  itrain: train index
+%  itest: test index
+%  irun: run index
+%  classdir: file directory for "crossFit" files
+%
+% Output
+%  log_score: [scalar] score
+%
+function log_score = fclassify(train_fn , test_fn ,classdir)
+
+    fn_train_to_test = ['refit' , extract_image_index(train_fn),'_' ,extract_image_index(test_fn)];
+    fn_test_to_train = ['refit' , extract_image_index(test_fn),'_' ,extract_image_index(train_fn)];
+
+    % load file optimizing P(I_T|I_C)
+    if ~exist(fullfile(classdir,[fn_train_to_test,'.mat']),'file')
+       test_fn_set = cell(1,1);
+       test_fn_set{1} = test_fn;
+       func_refit(train_fn , test_fn_set , false , true);
+    end
+    
+    load(fullfile(classdir,fn_train_to_test),'pair');
+%     pair.fit_score
+%     pair.prior_score
+    pair_fit_train_to_test = pair;
+    clear pair
+    
+    % load file optimizing P(I_C|I_T)
+    if ~exist(fullfile(classdir,[fn_test_to_train,'.mat']),'file')
+       train_fn_set = cell(1,1);
+       train_fn_set{1} = train_fn;
+       func_refit(test_fn , train_fn_set , false , true);
+    end
+    
+    load(fullfile(classdir,fn_test_to_train),'pair');
+%     pair.fit_score
+%     pair.prior_score
+    pair_fit_test_to_train = pair;
+    clear pair
+   
+    % compute score
+    [log_P_IT_given_IC,prior_scores] = log_post_pred(pair_fit_train_to_test);
+    log_P_IC_given_IT = log_post_pred(pair_fit_test_to_train);    
+    log_P_IC = logsumexp(prior_scores(:)); 
+    log_score = log_P_IC_given_IT + log_P_IT_given_IC - log_P_IC;
+    
+end
+
+%
+% Log-posterior predictive score, log P(I_2 | I_1), using discrete approximation
+%
+% Input
+%  pair: structure
+%  
+% Output
+%  logscore: log conditional probability
+%  prior_scores:  [k x 1] log joint probability (unnormalized) weights for
+%       each parse of I_1
+%
+function [logscore,prior_scores] = log_post_pred(pair)
+
+    % extra info
+    logfit = pair.fit_score;
+    prior_scores = pair.prior_score;
+    
+    % normalize weights
+    logwt = prior_scores - logsumexp(prior_scores(:));
+    
+    % combine weights with fit term
+    logv = logfit(:) + logwt;
+    logscore = logsumexp(logv);
+    
+end
+
+%
+% Input:
+%     train(or test) filename ,like : Chinese/image1-1.mat
+% Output:
+%     the index of filename , like : 1-1
+%
+function index = extract_image_index(fn)
+    begin = strfind(fn , '/image') + 6;
+    ending = length(fn)-4;
+    index = fn(begin:ending);
+end
+
+
+
